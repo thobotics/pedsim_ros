@@ -120,6 +120,11 @@ public:
 
     // simulation visualization mode
     VisualMode visual_mode;
+
+    double robot_radius;
+    double robot_forceSocial_weight;
+    bool move_cycle;
+    bool paused_;
 };
 
 #endif

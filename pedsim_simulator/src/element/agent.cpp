@@ -143,9 +143,17 @@ Ped::Twaypoint* Agent::updateDestination()
         if (currentDestination != nullptr) {
             // cycle through destinations
             Waypoint* previousDestination = destinations.takeFirst();
-            destinations.append(previousDestination);
+
+            if(getType() != Ped::Tagent::ROBOT || CONFIG.move_cycle)
+                destinations.append(previousDestination);
         }
+
         currentDestination = destinations.first();
+    }else{
+        currentDestination = nullptr;
+
+        if(getType() == Ped::Tagent::ROBOT)
+            CONFIG.paused_ = true;
     }
 
     return currentDestination;
@@ -179,12 +187,12 @@ void Agent::move(double h)
             }
         }
         else if (CONFIG.robot_mode == RobotMode::SOCIAL_DRIVE) {
-            Ped::Tagent::setForceFactorSocial(CONFIG.forceSocial * 0.7);
+            Ped::Tagent::setForceFactorSocial(CONFIG.forceSocial * CONFIG.robot_forceSocial_weight);
             Ped::Tagent::setForceFactorObstacle(35);
             Ped::Tagent::setForceFactorDesired(4.2);
 
-            Ped::Tagent::setVmax(1.6);
-            Ped::Tagent::SetRadius(0.4);
+            Ped::Tagent::setVmax(CONFIG.max_robot_speed);
+            Ped::Tagent::SetRadius(CONFIG.robot_radius);
             Ped::Tagent::move(h);
         }
     }
@@ -211,17 +219,30 @@ const QList<Waypoint*>& Agent::getWaypoints() const
 bool Agent::setWaypoints(const QList<Waypoint*>& waypointsIn)
 {
     destinations = waypointsIn;
+    cycle_destinations = waypointsIn;
     return true;
 }
 
 bool Agent::addWaypoint(Waypoint* waypointIn)
 {
     destinations.append(waypointIn);
+    cycle_destinations.append(waypointIn);
     return true;
+}
+
+bool Agent::restoreWaypoints(){
+  if(getType() == Ped::Tagent::ROBOT){
+      destinations.clear();
+      for (Waypoint* w : cycle_destinations) {
+          destinations.append(w);
+      }
+  }
+  return true;
 }
 
 bool Agent::removeWaypoint(Waypoint* waypointIn)
 {
+    cycle_destinations.removeAll(waypointIn);
     int removeCount = destinations.removeAll(waypointIn);
 
     return (removeCount > 0);

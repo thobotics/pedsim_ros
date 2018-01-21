@@ -138,8 +138,11 @@ bool Simulator::initializeSimulation()
         return false;
     }
 
+    private_nh.param<bool>("move_cycle", CONFIG.move_cycle, true);
     private_nh.param<bool>("enable_groups", CONFIG.groups_enabled, true);
     private_nh.param<double>("max_robot_speed", CONFIG.max_robot_speed, 1.5);
+    private_nh.param<double>("robot_radius", CONFIG.robot_radius, 1.77);
+    private_nh.param<double>("robot_forceSocial_weight", CONFIG.robot_forceSocial_weight, 0.7);
 
     int op_mode = 1;
     private_nh.param<int>("robot_mode", op_mode, 1); // teleop
@@ -171,7 +174,9 @@ void Simulator::runSimulation()
                     robot_ = a;
 
                     // init default pose of robot
-                    Eigen::Quaternionf q = computePose(robot_);
+                    double theta = atan2(robot_->getvy(), robot_->getvx());
+                    Eigen::Quaternionf q = orientation_handler_->angle2Quaternion(theta);
+                    // Eigen::Quaternionf q = computePose(robot_);
                     last_robot_orientation_.x = q.x();
                     last_robot_orientation_.y = q.y();
                     last_robot_orientation_.z = q.z();
@@ -181,7 +186,7 @@ void Simulator::runSimulation()
         }
 
         updateRobotPositionFromTF(); // move robot
-        if (!paused_)
+        if (!CONFIG.paused_)
             SCENE.moveAllAgents(); // move all the pedestrians
 
         // mandatory data stream
@@ -237,8 +242,15 @@ void Simulator::reconfigureCB(pedsim_simulator::PedsimSimulatorConfig& config,
     CONFIG.setAlongWallForce(config.force_wall);
 
     // puase or unpause the simulation
-    if (paused_ != config.paused) {
-        paused_ = config.paused;
+    if (CONFIG.paused_ != config.paused) {
+        CONFIG.paused_ = config.paused;
+
+        // Unpaused and not move cycle
+        if(!CONFIG.paused_ && !CONFIG.move_cycle){
+            for (Agent* a : SCENE.getAgents()) {
+                a->restoreWaypoints();
+            }
+        }
     }
 }
 
@@ -249,7 +261,7 @@ void Simulator::reconfigureCB(pedsim_simulator::PedsimSimulatorConfig& config,
 bool Simulator::onPauseSimulation(std_srvs::Empty::Request& request,
     std_srvs::Empty::Response& response)
 {
-    paused_ = true;
+    CONFIG.paused_ = true;
     return true;
 }
 
@@ -260,7 +272,14 @@ bool Simulator::onPauseSimulation(std_srvs::Empty::Request& request,
 bool Simulator::onUnpauseSimulation(std_srvs::Empty::Request& request,
     std_srvs::Empty::Response& response)
 {
-    paused_ = false;
+    CONFIG.paused_ = false;
+
+    if(!CONFIG.move_cycle){
+        for (Agent* a : SCENE.getAgents()) {
+            a->restoreWaypoints();
+        }
+    }
+
     return true;
 }
 
@@ -514,7 +533,9 @@ void Simulator::publishRobotPosition()
         robot_location.pose.pose.orientation = last_robot_orientation_;
     }
     else {
-        Eigen::Quaternionf q = computePose(robot_);
+        double theta = atan2(robot_->getvy(), robot_->getvx());
+        Eigen::Quaternionf q = orientation_handler_->angle2Quaternion(theta);
+        // Eigen::Quaternionf q = computePose(robot_);
         robot_location.pose.pose.orientation.x = q.x();
         robot_location.pose.pose.orientation.y = q.y();
         robot_location.pose.pose.orientation.z = q.z();

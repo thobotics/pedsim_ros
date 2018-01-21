@@ -74,6 +74,7 @@ public:
     bool setWaypoints(const QList<Waypoint*>& waypointsIn);
     bool addWaypoint(Waypoint* waypointIn);
     bool removeWaypoint(Waypoint* waypointIn);
+    bool restoreWaypoints();
 
     Ped::Twaypoint* getCurrentDestination() const;
     bool needNewDestination() const;
@@ -133,6 +134,7 @@ protected:
 
     // → waypoints
     QList<Waypoint*> destinations;
+    QList<Waypoint*> cycle_destinations;
     Waypoint* currentDestination;
 
     // → group

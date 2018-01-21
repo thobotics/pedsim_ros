@@ -61,6 +61,9 @@ Config::Config(QObject* parent)
     wait_time_beta = 0.2;
 
     visual_mode = VisualMode::MINIMAL;
+
+    paused_ = false;
+    move_cycle = false;
 }
 
 Config& Config::getInstance()
