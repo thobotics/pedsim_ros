@@ -1,4 +1,5 @@
 #include <geometry_msgs/Twist.h>
+#include <geometry_msgs/Pose.h>
 #include <ros/ros.h>
 
 #include <tf/transform_broadcaster.h>
@@ -62,6 +63,18 @@ void onTwistReceived(const geometry_msgs::Twist::ConstPtr& twist)
     g_currentTwist = *twist;
 }
 
+void onPoseReceived(const geometry_msgs::Pose::ConstPtr& twist)
+{
+    boost::mutex::scoped_lock lock(mutex);
+    // Stop speed also
+    g_currentTwist.linear.x = 0;
+		g_currentTwist.angular.z = 0;
+    
+		g_currentPose.getOrigin().setX(twist->position.x);
+		g_currentPose.getOrigin().setY(twist->position.y);
+		g_currentPose.setRotation(tf::createQuaternionFromRPY(0, 0, twist->orientation.z));
+}
+
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "simulate_diff_drive_robot");
@@ -89,6 +102,7 @@ int main(int argc, char** argv)
     // Create ROS subscriber and TF broadcaster
     g_transformBroadcaster.reset(new tf::TransformBroadcaster());
     ros::Subscriber twistSubscriber = nodeHandle.subscribe<geometry_msgs::Twist>("cmd_vel", 3, onTwistReceived);
+    ros::Subscriber cmdPoseSubscriber = nodeHandle.subscribe<geometry_msgs::Pose>("cmd_pose", 3, onPoseReceived);
 
     // Run
     boost::thread updateThread(updateLoop);
