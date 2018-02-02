@@ -138,6 +138,7 @@ private:
     ros::Publisher pub_waypoints_;
     ros::Publisher pub_agent_arrows_;
     ros::Publisher pub_robot_position_;
+    ros::Publisher pub_robot_marker_;
 
     // provided services
     ros::ServiceServer srv_pause_simulation_;

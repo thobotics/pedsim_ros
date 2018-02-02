@@ -5,8 +5,6 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Grid1/Offset1
-        - /Pedsim-Visuals1
-        - /Tracking-Visuals1
         - /Odometry1
       Splitter Ratio: 0.712794
     Tree Height: 517
@@ -177,11 +175,19 @@ Visualization Manager:
       Class: rviz/Odometry
       Color: 255; 25; 0
       Enabled: true
-      Keep: 100
-      Length: 1
+      Keep: 1
+      Length: 0.7
       Name: Odometry
       Position Tolerance: 0.1
       Topic: /pedsim/robot_position
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /pedsim/robot_marker
+      Name: Robot Marker
+      Namespaces:
+        "": true
+      Queue Size: 100
       Value: true
   Enabled: true
   Global Options:
@@ -214,15 +220,15 @@ Visualization Manager:
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 8.77205
-        Y: 8.67916
-        Z: -6.3104e-06
+        X: 21.6769
+        Y: 5.72959
+        Z: -4.87922e-06
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 1.2454
+      Pitch: 1.1254
       Target Frame: <Fixed Frame>
       Value: XYOrbit (rviz)
-      Yaw: 3.88357
+      Yaw: 3.22357
     Saved: ~
 Window Geometry:
   Displays:

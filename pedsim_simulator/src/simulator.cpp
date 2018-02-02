@@ -61,6 +61,7 @@ Simulator::~Simulator()
     pub_tracked_groups_.shutdown();
     pub_social_activities_.shutdown();
     pub_robot_position_.shutdown();
+    pub_robot_marker_.shutdown();
 
     srv_pause_simulation_.shutdown();
     srv_unpause_simulation_.shutdown();
@@ -113,6 +114,8 @@ bool Simulator::initializeSimulation()
         "/pedsim/social_activities", queue_size);
     pub_robot_position_ = nh_.advertise<nav_msgs::Odometry>(
         "/pedsim/robot_position", queue_size);
+    pub_robot_marker_ = nh_.advertise<visualization_msgs::Marker>(
+        "/pedsim/robot_marker", queue_size, true);
 
     // services
     srv_pause_simulation_ = nh_.advertiseService(
@@ -522,6 +525,9 @@ void Simulator::publishRobotPosition()
     if (robot_ == nullptr)
         return;
 
+    // Robot height
+    double robot_height = 1.0;
+
     nav_msgs::Odometry robot_location;
     robot_location.header.stamp = ros::Time::now();
     robot_location.header.frame_id = "odom";
@@ -529,6 +535,7 @@ void Simulator::publishRobotPosition()
 
     robot_location.pose.pose.position.x = robot_->getx();
     robot_location.pose.pose.position.y = robot_->gety();
+    robot_location.pose.pose.position.z = robot_height / 2.0;
     if (hypot(robot_->getvx(), robot_->getvy()) < 0.05) {
         robot_location.pose.pose.orientation = last_robot_orientation_;
     }
@@ -548,6 +555,31 @@ void Simulator::publishRobotPosition()
     robot_location.twist.twist.linear.y = robot_->getvy();
 
     pub_robot_position_.publish(robot_location);
+
+    // Publish robot radius
+
+    visualization_msgs::Marker marker;
+    marker.header.frame_id = "odom";
+    marker.header.stamp = ros::Time();
+    marker.id = 0;
+
+    marker.color.a = 0.8;
+    marker.color.r = 0.0;
+    marker.color.g = 1.0;
+    marker.color.b = 0.0;
+
+    // TODO - get radius information from waypoints
+    marker.scale.x = CONFIG.robot_radius * 2;
+    marker.scale.y = CONFIG.robot_radius * 2;
+    marker.scale.z = robot_height;
+
+    marker.pose.position.x = robot_->getx();
+    marker.pose.position.y = robot_->gety();
+    marker.pose.position.z = marker.scale.z / 2.0;
+
+    marker.type = visualization_msgs::Marker::CYLINDER;
+
+    pub_robot_marker_.publish(marker);
 }
 
 /// -----------------------------------------------------------------

@@ -9,11 +9,11 @@
       <param name="scene_file" value="$(find pedsim_simulator)scenarios/scene4.xml" type="string"/>
       <param name="default_queue_size" value="10"/>
       <param name="max_robot_speed" value="2.5" type="double"/>
-      <param name="robot_radius" value="1.77" type="double"/>
-      <param name="robot_forceSocial_weight" value="5.0" type="double"/>
       <param name="robot_mode" value="2" type="int"/>
+      <param name="robot_radius" value="0.4" type="double"/>
+      <param name="robot_forceSocial_weight" value="10.0" type="double"/>
       <param name="enable_groups" value="true" type="bool"/>
-      <param name="move_cycle" value="false" type="bool"/>
+      <param name="move_cycle" value="true" type="bool"/>
   </node>
 
   <!-- Rviz -->
