@@ -119,6 +119,10 @@ public:
     void setPosition(double xIn, double yIn);
     void setX(double xIn);
     void setY(double yIn);
+    void setAngle(double angleIn);
+    double getAngle();
+    void setomega(double omegaIn);
+    double getomega();
     void setType(Ped::Tagent::AgentType typeIn);
 
     // → VisibleScenarioElement Overrides/Overloads
@@ -146,6 +150,10 @@ protected:
 
     // → waypoint planner
     WaypointPlanner* waypointplanner;
+
+    // → diff_robot
+    double angle;
+    double omega;
 };
 
 #endif

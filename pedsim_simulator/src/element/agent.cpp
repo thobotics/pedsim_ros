@@ -364,6 +364,16 @@ void Agent::setY(double yIn)
     setPosition(getx(), yIn);
 }
 
+void Agent::setAngle(double angleIn)
+{
+    angle = angleIn;
+}
+
+void Agent::setomega(double omegaIn)
+{
+    omega = omegaIn;
+}
+
 void Agent::setType(Ped::Tagent::AgentType typeIn)
 {
     // call super class' method
@@ -402,6 +412,17 @@ QPointF Agent::getVisiblePosition() const
 {
     return QPointF(getx(), gety());
 }
+
+double Agent::getAngle()
+{
+    return angle;
+}
+
+double Agent::getomega()
+{
+    return omega;
+}
+
 
 void Agent::setVisiblePosition(const QPointF& positionIn)
 {

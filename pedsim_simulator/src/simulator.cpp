@@ -357,21 +357,58 @@ void Simulator::updateRobotPositionFromTF()
             return;
         }
 
-        double x = tfTransform.getOrigin().x(), y = tfTransform.getOrigin().y();
+        double x = tfTransform.getOrigin().x(),
+               y = tfTransform.getOrigin().y();
+        tf::Quaternion quaternion = tfTransform.getRotation();
+
+        // Convert to Euler angle
+        double roll, pitch, yaw;
+        tf::Matrix3x3(quaternion).getRPY(roll, pitch, yaw);
+
+        tf::Quaternion last_quaternion = last_robot_pose_.getRotation();
+        double last_roll, last_pitch, last_yaw;
+        tf::Matrix3x3(last_quaternion).getRPY(last_roll, last_pitch, last_yaw);
+
         double dx = x - last_robot_pose_.getOrigin().x(),
-               dy = y - last_robot_pose_.getOrigin().y();
+               dy = y - last_robot_pose_.getOrigin().y(),
+               theta = yaw - last_yaw;
+
+        // Tricky hack
+        // When last_yaw move from -pi+a --> pi+b. We need to compute a+b
+        if(yaw * last_yaw < 0 && abs(yaw) > M_PI / 2.0){
+            double last_yaw_sign = last_yaw > 0 ? 1 : -1;
+            theta = (yaw + 2 * M_PI * last_yaw_sign) - last_yaw;
+        }
+
+        double d = hypot(dx, dy);
+        double sign = 1;
+        // Tricky hack
+        // 1. Since last_yaw is near -pi | 0.xx and this yaw near pi | -0.xx
+        //    ==> sign switched, but atan2 haven't changed yet.
+        // 2. When yaw == 0; atan2(0, +) = + and atan2(0, -) = PI (+).
+        if(yaw * last_yaw < 0){
+            sign = (sin(-yaw) * atan2(dy, dx) >= 0) ? 1 : -1;
+        }else if(yaw == 0){
+            sign = (dx > 0) ? 1 : -1;
+        }else{
+            sign = (sin(yaw) * atan2(dy, dx) >= 0) ? 1 : -1;
+        }
+        // printf("Sin(%f) %f, Atan2 %f(%f, %f), Sign %f\n", yaw, sin(yaw), atan2(dy, dx), dy, dx, sign);
+
         double dt = tfTransform.stamp_.toSec() - last_robot_pose_.stamp_.toSec();
-        double vx = dx / dt, vy = dy / dt;
+        double vx = sign*d / dt, omega = theta / dt;
 
         if (!std::isfinite(vx))
             vx = 0;
-        if (!std::isfinite(vy))
-            vy = 0;
+        // if (!std::isfinite(vy))
+        //     vy = 0;
 
         robot_->setX(x);
         robot_->setY(y);
+        robot_->setAngle(yaw);
         robot_->setvx(vx);
-        robot_->setvy(vy);
+        // robot_->setvy(vy);
+        robot_->setomega(omega);
 
         last_robot_pose_ = tfTransform;
     }
@@ -536,23 +573,18 @@ void Simulator::publishRobotPosition()
     robot_location.pose.pose.position.x = robot_->getx();
     robot_location.pose.pose.position.y = robot_->gety();
     robot_location.pose.pose.position.z = robot_height / 2.0;
-    if (hypot(robot_->getvx(), robot_->getvy()) < 0.05) {
-        robot_location.pose.pose.orientation = last_robot_orientation_;
-    }
-    else {
-        double theta = atan2(robot_->getvy(), robot_->getvx());
-        Eigen::Quaternionf q = orientation_handler_->angle2Quaternion(theta);
-        // Eigen::Quaternionf q = computePose(robot_);
-        robot_location.pose.pose.orientation.x = q.x();
-        robot_location.pose.pose.orientation.y = q.y();
-        robot_location.pose.pose.orientation.z = q.z();
-        robot_location.pose.pose.orientation.w = q.w();
 
-        last_robot_orientation_ = robot_location.pose.pose.orientation;
-    }
+    double theta = robot_->getAngle();
+    Eigen::Quaternionf q = orientation_handler_->angle2Quaternion(theta);
+    robot_location.pose.pose.orientation.x = q.x();
+    robot_location.pose.pose.orientation.y = q.y();
+    robot_location.pose.pose.orientation.z = q.z();
+    robot_location.pose.pose.orientation.w = q.w();
 
+    // Differential drive robot don't has Vy
     robot_location.twist.twist.linear.x = robot_->getvx();
-    robot_location.twist.twist.linear.y = robot_->getvy();
+    // robot_location.twist.twist.linear.y = robot_->getvy();
+    robot_location.twist.twist.angular.z = robot_->getomega();
 
     pub_robot_position_.publish(robot_location);
 
