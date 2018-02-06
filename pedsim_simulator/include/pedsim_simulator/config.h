@@ -83,7 +83,7 @@ public:
 
     double getTimeStepSize()
     {
-        return simulationFactor / updateRate;
+        return timeStep;
     }
 
     // Attributes
@@ -91,6 +91,7 @@ public:
     // Simulation
     double updateRate;
     double simulationFactor;
+    double timeStep;
 
     // Forces
     double forceObstacle;

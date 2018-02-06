@@ -7,7 +7,7 @@
 #include <boost/thread.hpp>
 #include <boost/thread/mutex.hpp>
 
-double g_updateRate, g_simulationFactor;
+double g_updateRate, g_simulationFactor, g_timeStep;
 std::string g_worldFrame, g_robotFrame;
 geometry_msgs::Twist g_currentTwist;
 tf::Transform g_currentPose;
@@ -22,8 +22,8 @@ boost::mutex mutex;
 /// base_footprint frame.
 void updateLoop()
 {
-    ros::Rate rate(g_updateRate);
-    double dt = g_simulationFactor / g_updateRate;
+    ros::WallRate rate(g_updateRate);
+    double dt = g_timeStep;
 
     while (true) {
         // Get current pose
@@ -89,6 +89,7 @@ int main(int argc, char** argv)
     privateHandle.param<double>("simulation_factor", g_simulationFactor,
         1.0); // set to e.g. 2.0 for 2x speed
     privateHandle.param<double>("update_rate", g_updateRate, 25.0); // in Hz
+    privateHandle.param<double>("time_step", g_timeStep, 0.05);
 
     double initialX = 0.0, initialY = 0.0, initialTheta = 0.0;
     privateHandle.param<double>("pose_initial_x", initialX, 0.0);

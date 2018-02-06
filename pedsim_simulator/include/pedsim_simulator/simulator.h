@@ -62,6 +62,7 @@
 #include <std_srvs/Empty.h>
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
+#include <rosgraph_msgs/Clock.h>
 
 #include <pedsim_simulator/agentstatemachine.h>
 #include <pedsim_simulator/agentstatemachine.h>
@@ -104,6 +105,7 @@ public:
     void publishWalls();
     void publishAttractions();
     void publishRobotPosition();
+    void publishClock();
 
     // callbacks
     bool onPauseSimulation(std_srvs::Empty::Request& request,
@@ -139,6 +141,7 @@ private:
     ros::Publisher pub_agent_arrows_;
     ros::Publisher pub_robot_position_;
     ros::Publisher pub_robot_marker_;
+    ros::Publisher pub_clock_;
 
     // provided services
     ros::ServiceServer srv_pause_simulation_;
@@ -157,6 +160,7 @@ private:
     inline Eigen::Quaternionf computePose(Agent* a);
     inline std::string agentStateToActivity(AgentStateMachine::AgentState state);
     inline std_msgs::ColorRGBA getColor(int agent_id);
+    ros::Time sim_time_;
 };
 
 #endif

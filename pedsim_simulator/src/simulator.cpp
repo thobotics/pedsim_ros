@@ -83,6 +83,7 @@ bool Simulator::initializeSimulation()
         << (queue_size == 0
                             ? "NOTE: This means the queues are of infinite size!"
                             : ""));
+    sim_time_.fromSec(0.0);
 
     /// setup ros publishers
     // visualizations
@@ -116,6 +117,7 @@ bool Simulator::initializeSimulation()
         "/pedsim/robot_position", queue_size);
     pub_robot_marker_ = nh_.advertise<visualization_msgs::Marker>(
         "/pedsim/robot_marker", queue_size, true);
+    pub_clock_ = nh_.advertise<rosgraph_msgs::Clock>("/clock", 10);
 
     // services
     srv_pause_simulation_ = nh_.advertiseService(
@@ -146,6 +148,7 @@ bool Simulator::initializeSimulation()
     private_nh.param<double>("max_robot_speed", CONFIG.max_robot_speed, 1.5);
     private_nh.param<double>("robot_radius", CONFIG.robot_radius, 1.77);
     private_nh.param<double>("robot_forceSocial_weight", CONFIG.robot_forceSocial_weight, 0.7);
+    private_nh.param<double>("time_step", CONFIG.timeStep, 0.05);
 
     int op_mode = 1;
     private_nh.param<int>("robot_mode", op_mode, 1); // teleop
@@ -167,7 +170,7 @@ bool Simulator::initializeSimulation()
 /// -----------------------------------------------------------------
 void Simulator::runSimulation()
 {
-    ros::Rate r(CONFIG.updateRate); // Hz
+    ros::WallRate r(CONFIG.updateRate); // Hz
 
     while (ros::ok()) {
         if (SCENE.getTime() < 0.1) {
@@ -192,30 +195,40 @@ void Simulator::runSimulation()
         if (!CONFIG.paused_)
             SCENE.moveAllAgents(); // move all the pedestrians
 
-        // mandatory data stream
-        publishData();
-        publishRobotPosition();
-        publishObstacles();
+        // Publish stream
+        sim_time_.fromSec(SCENE.getTime());
+        // We're not allowed to publish clock==0, because it used as a special
+        // value in parts of ROS, #4027.
+        if(sim_time_.sec == 0 && sim_time_.nsec == 0)
+        {
+            ROS_DEBUG("Skipping initial simulation step, to avoid publishing clock==0");
+        } else {
+            // mandatory data stream
+            publishData();
+            publishRobotPosition();
+            publishObstacles();
 
-        if (CONFIG.visual_mode == VisualMode::MINIMAL) {
-            publishAgents(); // animated markers
+            if (CONFIG.visual_mode == VisualMode::MINIMAL) {
+                publishAgents(); // animated markers
 
-            if (SCENE.getTime() < 20) {
-                publishWalls();
+                if (SCENE.getTime() < 20) {
+                    publishWalls();
+                }
             }
-        }
 
-        if (CONFIG.visual_mode == VisualMode::FULL) {
-            publishSocialActivities();
-            publishGroupVisuals();
-            updateAgentActivities();
+            if (CONFIG.visual_mode == VisualMode::FULL) {
+                publishSocialActivities();
+                publishGroupVisuals();
+                updateAgentActivities();
 
-            if (SCENE.getTime() < 20) {
-                publishAttractions();
-                publishWalls();
+                if (SCENE.getTime() < 20) {
+                    publishAttractions();
+                    publishWalls();
+                }
             }
-        }
 
+            publishClock();
+        }
         ros::spinOnce();
         r.sleep();
     }
@@ -423,7 +436,7 @@ void Simulator::publishSocialActivities()
     /// Social activities
     pedsim_msgs::SocialActivities social_activities;
     std_msgs::Header social_activities_header;
-    social_activities_header.stamp = ros::Time::now();
+    social_activities_header.stamp = sim_time_;
     social_activities.header = social_activities_header;
     social_activities.header.frame_id = "odom";
 
@@ -487,7 +500,7 @@ void Simulator::publishData()
     /// Tracked people
     pedsim_msgs::TrackedPersons tracked_people;
     std_msgs::Header tracked_people_header;
-    tracked_people_header.stamp = ros::Time::now();
+    tracked_people_header.stamp = sim_time_;
     tracked_people.header = tracked_people_header;
     tracked_people.header.frame_id = "odom";
 
@@ -527,7 +540,7 @@ void Simulator::publishData()
     /// Tracked groups
     pedsim_msgs::TrackedGroups tracked_groups;
     std_msgs::Header tracked_groups_header;
-    tracked_groups_header.stamp = ros::Time::now();
+    tracked_groups_header.stamp = sim_time_;
     tracked_groups.header = tracked_groups_header;
     tracked_groups.header.frame_id = "odom";
 
@@ -566,7 +579,7 @@ void Simulator::publishRobotPosition()
     double robot_height = 1.0;
 
     nav_msgs::Odometry robot_location;
-    robot_location.header.stamp = ros::Time::now();
+    robot_location.header.stamp = sim_time_;
     robot_location.header.frame_id = "odom";
     robot_location.child_frame_id = "odom";
 
@@ -592,7 +605,7 @@ void Simulator::publishRobotPosition()
 
     visualization_msgs::Marker marker;
     marker.header.frame_id = "odom";
-    marker.header.stamp = ros::Time();
+    marker.header.stamp = sim_time_;
     marker.id = 0;
 
     marker.color.a = 0.8;
@@ -627,7 +640,7 @@ void Simulator::publishAgents()
     // status message
     pedsim_msgs::AllAgentsState all_status;
     std_msgs::Header all_header;
-    all_header.stamp = ros::Time::now();
+    all_header.stamp = sim_time_;
     all_status.header = all_header;
 
     for (Agent* a : SCENE.getAgents()) {
@@ -635,7 +648,7 @@ void Simulator::publishAgents()
         animated_marker_msgs::AnimatedMarker marker;
         marker.mesh_use_embedded_materials = true;
         marker.header.frame_id = "odom";
-        marker.header.stamp = ros::Time();
+        marker.header.stamp = sim_time_;
         marker.id = a->getId();
         marker.type = animated_marker_msgs::AnimatedMarker::MESH_RESOURCE;
         marker.mesh_resource = "package://pedsim_simulator/images/animated_walking_man.mesh";
@@ -650,7 +663,7 @@ void Simulator::publishAgents()
         /// arrows
         visualization_msgs::Marker arrow;
         arrow.header.frame_id = "odom";
-        arrow.header.stamp = ros::Time();
+        arrow.header.stamp = sim_time_;
         arrow.id = a->getId() + 3000;
 
         arrow.pose.position.x = a->getx();
@@ -731,7 +744,7 @@ void Simulator::publishAgents()
         /// spencer messages
         pedsim_msgs::AgentState state;
         std_msgs::Header agent_header;
-        agent_header.stamp = ros::Time::now();
+        agent_header.stamp = sim_time_;
         state.header = agent_header;
 
         state.id = a->getId();
@@ -784,7 +797,7 @@ void Simulator::publishGroupVisuals()
         for (Agent* m : ag->getMembers()) {
             visualization_msgs::Marker marker;
             marker.header.frame_id = "odom";
-            marker.header.stamp = ros::Time();
+            marker.header.stamp = sim_time_;
             marker.id = m->getId() + 1000;
 
             marker.color.a = 1.0;
@@ -841,7 +854,7 @@ void Simulator::publishWalls()
 {
     visualization_msgs::Marker marker;
     marker.header.frame_id = "odom";
-    marker.header.stamp = ros::Time();
+    marker.header.stamp = sim_time_;
     marker.id = 10000;
     marker.color.a = 1.0;
     marker.color.r = 1.0;
@@ -876,7 +889,7 @@ void Simulator::publishAttractions()
         //      wp->getType()
         visualization_msgs::Marker marker;
         marker.header.frame_id = "odom";
-        marker.header.stamp = ros::Time();
+        marker.header.stamp = sim_time_;
         marker.id = wp->getId();
 
         marker.color.a = 0.15;
@@ -902,7 +915,7 @@ void Simulator::publishAttractions()
     for (AttractionArea* atr : SCENE.getAttractions()) {
         visualization_msgs::Marker marker;
         marker.header.frame_id = "odom";
-        marker.header.stamp = ros::Time();
+        marker.header.stamp = sim_time_;
         marker.id = atr->getId();
 
         marker.color.a = 0.35;
@@ -922,6 +935,13 @@ void Simulator::publishAttractions()
 
         pub_attractions_.publish(marker);
     }
+}
+
+void Simulator::publishClock()
+{
+    rosgraph_msgs::Clock clock_msg;
+    clock_msg.clock = sim_time_;
+    pub_clock_.publish(clock_msg);
 }
 
 /// -----------------------------------------------------------------
