@@ -144,7 +144,7 @@ Ped::Twaypoint* Agent::updateDestination()
             // cycle through destinations
             Waypoint* previousDestination = destinations.takeFirst();
 
-            if(getType() != Ped::Tagent::ROBOT || CONFIG.move_cycle)
+            if(getType() != Ped::Tagent::ROBOT || getTeleop() || CONFIG.move_cycle)
                 destinations.append(previousDestination);
         }
 
