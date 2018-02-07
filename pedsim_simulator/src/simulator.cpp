@@ -127,6 +127,7 @@ bool Simulator::initializeSimulation()
 
     /// setup TF listener and other pointers
     transform_listener_.reset(new tf::TransformListener());
+    transform_broadcaster_.reset(new tf::TransformBroadcaster());
     orientation_handler_.reset(new OrientationHandler());
     robot_ = nullptr;
 
@@ -157,6 +158,21 @@ bool Simulator::initializeSimulation()
     int vis_mode = 1;
     private_nh.param<int>("visual_mode", vis_mode, 1);
     CONFIG.visual_mode = static_cast<VisualMode>(vis_mode);
+
+    if (CONFIG.robot_mode == RobotMode::TELEOPERATION || CONFIG.robot_mode == RobotMode::CONTROLLED){
+        twist_subscriber_ = nh_.subscribe<geometry_msgs::Twist>("cmd_vel", 3, &Simulator::onTwistReceived, this);
+        cmd_pose_subscriber_ = nh_.subscribe<geometry_msgs::Pose>("cmd_pose", 3, &Simulator::onPoseReceived, this);
+
+        // Initial value
+        double initialX = 0.0, initialY = 0.0, initialTheta = 0.0;
+        private_nh.param<double>("robot_initial_x", initialX, 0.0);
+        private_nh.param<double>("robot_initial_y", initialY, 0.0);
+        private_nh.param<double>("robot_initial_theta", initialTheta, 0.0);
+
+        last_robot_pose_.getOrigin().setX(initialX);
+        last_robot_pose_.getOrigin().setY(initialY);
+        last_robot_pose_.setRotation(tf::createQuaternionFromRPY(0, 0, initialTheta));
+    }
 
     agent_activities_.clear();
     paused_ = false;
@@ -299,6 +315,24 @@ bool Simulator::onUnpauseSimulation(std_srvs::Empty::Request& request,
     return true;
 }
 
+void Simulator::onTwistReceived(const geometry_msgs::Twist::ConstPtr& twist)
+{
+    boost::mutex::scoped_lock lock(robot_mutex_);
+    last_robot_twist_ = *twist;
+}
+
+void Simulator::onPoseReceived(const geometry_msgs::Pose::ConstPtr& pose)
+{
+    boost::mutex::scoped_lock lock(robot_mutex_);
+    // Stop speed also
+    last_robot_twist_.linear.x = 0;
+		last_robot_twist_.angular.z = 0;
+
+		last_robot_pose_.getOrigin().setX(pose->position.x);
+		last_robot_pose_.getOrigin().setY(pose->position.y);
+		last_robot_pose_.setRotation(tf::createQuaternionFromRPY(0, 0, pose->orientation.z));
+}
+
 /// -----------------------------------------------------------------
 /// \brief updateAgentActivities
 /// \details Update the map of activities of each agent for visuals
@@ -357,59 +391,22 @@ void Simulator::updateRobotPositionFromTF()
         robot_->setVmax(
             CONFIG.max_robot_speed); // NOTE - check if this is really necessary
 
-        // Get robot position via TF
-        tf::StampedTransform tfTransform;
-        try {
-            transform_listener_->lookupTransform("odom", "base_footprint",
-                ros::Time(0), tfTransform);
-        }
-        catch (tf::TransformException& e) {
-            ROS_WARN_STREAM_THROTTLE(
-                5.0,
-                "TF lookup from base_footprint to odom failed. Reason: " << e.what());
-            return;
-        }
+        double x = last_robot_pose_.getOrigin().x();
+        double y = last_robot_pose_.getOrigin().y();
+        double theta = tf::getYaw(last_robot_pose_.getRotation());
 
-        double x = tfTransform.getOrigin().x(),
-               y = tfTransform.getOrigin().y();
-        tf::Quaternion quaternion = tfTransform.getRotation();
-
-        // Convert to Euler angle
-        double roll, pitch, yaw;
-        tf::Matrix3x3(quaternion).getRPY(roll, pitch, yaw);
-
-        tf::Quaternion last_quaternion = last_robot_pose_.getRotation();
-        double last_roll, last_pitch, last_yaw;
-        tf::Matrix3x3(last_quaternion).getRPY(last_roll, last_pitch, last_yaw);
-
-        double dx = x - last_robot_pose_.getOrigin().x(),
-               dy = y - last_robot_pose_.getOrigin().y(),
-               theta = yaw - last_yaw;
-
-        // Tricky hack
-        // When last_yaw move from -pi+a --> pi+b. We need to compute a+b
-        if(yaw * last_yaw < 0 && abs(yaw) > M_PI / 2.0){
-            double last_yaw_sign = last_yaw > 0 ? 1 : -1;
-            theta = (yaw + 2 * M_PI * last_yaw_sign) - last_yaw;
+        // Get requested translational and rotational velocity
+        double vx, omega;
+        {
+            boost::mutex::scoped_lock lock(robot_mutex_);
+            vx = last_robot_twist_.linear.x;
+            omega = last_robot_twist_.angular.z;
         }
 
-        double d = hypot(dx, dy);
-        double sign = 1;
-        // Tricky hack
-        // 1. Since last_yaw is near -pi | 0.xx and this yaw near pi | -0.xx
-        //    ==> sign switched, but atan2 haven't changed yet.
-        // 2. When yaw == 0; atan2(0, +) = + and atan2(0, -) = PI (+).
-        if(yaw * last_yaw < 0){
-            sign = (sin(-yaw) * atan2(dy, dx) >= 0) ? 1 : -1;
-        }else if(yaw == 0){
-            sign = (dx > 0) ? 1 : -1;
-        }else{
-            sign = (sin(yaw) * atan2(dy, dx) >= 0) ? 1 : -1;
-        }
-        // printf("Sin(%f) %f, Atan2 %f(%f, %f), Sign %f\n", yaw, sin(yaw), atan2(dy, dx), dy, dx, sign);
-
-        double dt = tfTransform.stamp_.toSec() - last_robot_pose_.stamp_.toSec();
-        double vx = sign*d / dt, omega = theta / dt;
+        // Simulate robot movement
+        x += cos(theta) * vx * CONFIG.timeStep;
+        y += sin(theta) * vx * CONFIG.timeStep;
+        theta += omega * CONFIG.timeStep;
 
         if (!std::isfinite(vx))
             vx = 0;
@@ -418,12 +415,19 @@ void Simulator::updateRobotPositionFromTF()
 
         robot_->setX(x);
         robot_->setY(y);
-        robot_->setAngle(yaw);
+        robot_->setAngle(theta);
         robot_->setvx(vx);
         // robot_->setvy(vy);
         robot_->setomega(omega);
 
-        last_robot_pose_ = tfTransform;
+        // Update pose
+        last_robot_pose_.getOrigin().setX(x);
+        last_robot_pose_.getOrigin().setY(y);
+        last_robot_pose_.setRotation(tf::createQuaternionFromRPY(0, 0, theta));
+
+        // Broadcast transform
+        transform_broadcaster_->sendTransform(tf::StampedTransform(
+            last_robot_pose_, ros::Time::now(), "odom", "base_footprint"));
     }
 }
 

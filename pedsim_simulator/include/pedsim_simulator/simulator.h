@@ -38,7 +38,7 @@
 #include <functional>
 #include <memory>
 #include <tf/transform_listener.h>
-
+#include <tf/transform_broadcaster.h>
 #include <pedsim_msgs/AgentState.h>
 #include <pedsim_msgs/AllAgentsState.h>
 #include <pedsim_msgs/SocialActivities.h>
@@ -51,6 +51,8 @@
 // other ROS-sy messages
 #include <animated_marker_msgs/AnimatedMarker.h>
 #include <animated_marker_msgs/AnimatedMarkerArray.h>
+#include <geometry_msgs/Twist.h>
+#include <geometry_msgs/Pose.h>
 #include <geometry_msgs/Point.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PoseWithCovariance.h>
@@ -78,6 +80,9 @@
 
 #include <dynamic_reconfigure/server.h>
 #include <pedsim_simulator/PedsimSimulatorConfig.h>
+
+#include <boost/thread.hpp>
+#include <boost/thread/mutex.hpp>
 
 using SimConfig = pedsim_simulator::PedsimSimulatorConfig;
 
@@ -112,6 +117,8 @@ public:
         std_srvs::Empty::Response& response);
     bool onUnpauseSimulation(std_srvs::Empty::Request& request,
         std_srvs::Empty::Response& response);
+    void onTwistReceived(const geometry_msgs::Twist::ConstPtr& twist);
+    void onPoseReceived(const geometry_msgs::Pose::ConstPtr& pose);
 
     // update robot position based upon data from TF
     void updateRobotPositionFromTF();
@@ -143,6 +150,10 @@ private:
     ros::Publisher pub_robot_marker_;
     ros::Publisher pub_clock_;
 
+    // subscribers
+    ros::Subscriber twist_subscriber_;
+    ros::Subscriber cmd_pose_subscriber_;
+
     // provided services
     ros::ServiceServer srv_pause_simulation_;
     ros::ServiceServer srv_unpause_simulation_;
@@ -152,15 +163,18 @@ private:
 
     // pointers and additional data
     std::unique_ptr<tf::TransformListener> transform_listener_;
+    std::unique_ptr<tf::TransformBroadcaster> transform_broadcaster_;
     std::unique_ptr<OrientationHandler> orientation_handler_;
     Agent* robot_; // robot agent
     tf::StampedTransform last_robot_pose_; // pose of robot in previous timestep
     geometry_msgs::Quaternion last_robot_orientation_;
+    geometry_msgs::Twist last_robot_twist_;
 
     inline Eigen::Quaternionf computePose(Agent* a);
     inline std::string agentStateToActivity(AgentStateMachine::AgentState state);
     inline std_msgs::ColorRGBA getColor(int agent_id);
     ros::Time sim_time_;
+    boost::mutex robot_mutex_;
 };
 
 #endif

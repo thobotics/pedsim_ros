@@ -24,6 +24,8 @@ void updateLoop()
 {
     ros::WallRate rate(g_updateRate);
     double dt = g_timeStep;
+    // Tricky hack to protect inf omega;
+    double last_omega = 0;
 
     while (true) {
         // Get current pose
@@ -37,6 +39,8 @@ void updateLoop()
             boost::mutex::scoped_lock lock(mutex);
             v = g_currentTwist.linear.x;
             omega = g_currentTwist.angular.z;
+            omega = isinf(omega) || isnan(omega) ? last_omega : omega;
+            last_omega = omega;
         }
 
         // Simulate robot movement
@@ -47,7 +51,9 @@ void updateLoop()
         // Update pose
         g_currentPose.getOrigin().setX(x);
         g_currentPose.getOrigin().setY(y);
-        g_currentPose.setRotation(tf::createQuaternionFromRPY(0, 0, theta));
+        tf::Quaternion quat = tf::createQuaternionFromRPY(0, 0, theta);
+        printf("omega %f, Theta %f, Quat = %f, %f, %f, %f\n", omega, theta, quat.x(), quat.y(), quat.z(), quat.w());
+        g_currentPose.setRotation(quat);
 
         // Broadcast transform
         g_transformBroadcaster->sendTransform(tf::StampedTransform(
@@ -63,16 +69,16 @@ void onTwistReceived(const geometry_msgs::Twist::ConstPtr& twist)
     g_currentTwist = *twist;
 }
 
-void onPoseReceived(const geometry_msgs::Pose::ConstPtr& twist)
+void onPoseReceived(const geometry_msgs::Pose::ConstPtr& pose)
 {
     boost::mutex::scoped_lock lock(mutex);
     // Stop speed also
     g_currentTwist.linear.x = 0;
 		g_currentTwist.angular.z = 0;
-    
-		g_currentPose.getOrigin().setX(twist->position.x);
-		g_currentPose.getOrigin().setY(twist->position.y);
-		g_currentPose.setRotation(tf::createQuaternionFromRPY(0, 0, twist->orientation.z));
+
+		g_currentPose.getOrigin().setX(pose->position.x);
+		g_currentPose.getOrigin().setY(pose->position.y);
+		g_currentPose.setRotation(tf::createQuaternionFromRPY(0, 0, pose->orientation.z));
 }
 
 int main(int argc, char** argv)
