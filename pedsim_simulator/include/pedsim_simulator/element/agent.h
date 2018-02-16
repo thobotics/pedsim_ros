@@ -123,6 +123,10 @@ public:
     double getAngle();
     void setomega(double omegaIn);
     double getomega();
+    double getExpertX();
+    double getExpertY();
+    double getExpertVx();
+    double getExpertVy();
     void setType(Ped::Tagent::AgentType typeIn);
 
     // → VisibleScenarioElement Overrides/Overloads
@@ -154,6 +158,10 @@ protected:
     // → diff_robot
     double angle;
     double omega;
+
+    // → expert social drive
+    Ped::Tvector expert_p;
+    Ped::Tvector expert_v;
 };
 
 #endif

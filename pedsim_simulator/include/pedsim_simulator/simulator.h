@@ -61,6 +61,7 @@
 #include <nav_msgs/Odometry.h>
 #include <std_msgs/ColorRGBA.h>
 #include <std_msgs/Header.h>
+#include <std_msgs/Int32.h>
 #include <std_srvs/Empty.h>
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
@@ -119,6 +120,7 @@ public:
         std_srvs::Empty::Response& response);
     void onTwistReceived(const geometry_msgs::Twist::ConstPtr& twist);
     void onPoseReceived(const geometry_msgs::Pose::ConstPtr& pose);
+    void onRobotModeReceived(const std_msgs::Int32::ConstPtr& robot_mode);
 
     // update robot position based upon data from TF
     void updateRobotPositionFromTF();
@@ -149,8 +151,10 @@ private:
     ros::Publisher pub_robot_position_;
     ros::Publisher pub_robot_marker_;
     ros::Publisher pub_clock_;
+    ros::Publisher pub_expert_position_;
 
     // subscribers
+    ros::Subscriber robot_mode_subscriber_;
     ros::Subscriber twist_subscriber_;
     ros::Subscriber cmd_pose_subscriber_;
 

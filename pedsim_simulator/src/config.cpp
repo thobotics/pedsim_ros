@@ -64,6 +64,7 @@ Config::Config(QObject* parent)
 
     paused_ = false;
     move_cycle = false;
+    fetch_expert = false;
 }
 
 Config& Config::getInstance()

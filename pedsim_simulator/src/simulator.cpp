@@ -159,7 +159,13 @@ bool Simulator::initializeSimulation()
     private_nh.param<int>("visual_mode", vis_mode, 1);
     CONFIG.visual_mode = static_cast<VisualMode>(vis_mode);
 
+    robot_mode_subscriber_ = nh_.subscribe<std_msgs::Int32>("robot_mode", 3, &Simulator::onRobotModeReceived, this);
+
     if (CONFIG.robot_mode == RobotMode::TELEOPERATION || CONFIG.robot_mode == RobotMode::CONTROLLED){
+        private_nh.param<bool>("fetch_expert", CONFIG.fetch_expert, true);
+
+        pub_expert_position_ = nh_.advertise<nav_msgs::Odometry>(
+            "/pedsim/expert_position", queue_size);
         twist_subscriber_ = nh_.subscribe<geometry_msgs::Twist>("cmd_vel", 3, &Simulator::onTwistReceived, this);
         cmd_pose_subscriber_ = nh_.subscribe<geometry_msgs::Pose>("cmd_pose", 3, &Simulator::onPoseReceived, this);
 
@@ -333,6 +339,11 @@ void Simulator::onPoseReceived(const geometry_msgs::Pose::ConstPtr& pose)
 		last_robot_pose_.setRotation(tf::createQuaternionFromRPY(0, 0, pose->orientation.z));
 }
 
+void Simulator::onRobotModeReceived(const std_msgs::Int32::ConstPtr& robot_mode)
+{
+    boost::mutex::scoped_lock lock(robot_mutex_);
+    CONFIG.robot_mode = static_cast<RobotMode>(robot_mode->data);
+}
 /// -----------------------------------------------------------------
 /// \brief updateAgentActivities
 /// \details Update the map of activities of each agent for visuals
@@ -396,38 +407,34 @@ void Simulator::updateRobotPositionFromTF()
         double theta = tf::getYaw(last_robot_pose_.getRotation());
 
         // Get requested translational and rotational velocity
-        double vx, omega;
+        double vx, vy, omega;
         {
             boost::mutex::scoped_lock lock(robot_mutex_);
             vx = last_robot_twist_.linear.x;
+            vy = last_robot_twist_.linear.y;
             omega = last_robot_twist_.angular.z;
         }
 
         // Simulate robot movement
-        x += cos(theta) * vx * CONFIG.timeStep;
-        y += sin(theta) * vx * CONFIG.timeStep;
-        theta += omega * CONFIG.timeStep;
+        // x += cos(theta) * vx * CONFIG.timeStep;
+        // y += sin(theta) * vx * CONFIG.timeStep;
+        // theta += omega * CONFIG.timeStep;
+        x += vx * CONFIG.timeStep;
+        y += vy * CONFIG.timeStep;
+        theta = atan2(vy, vx);
 
         if (!std::isfinite(vx))
             vx = 0;
-        // if (!std::isfinite(vy))
-        //     vy = 0;
+        if (!std::isfinite(vy))
+            vy = 0;
 
         robot_->setX(x);
         robot_->setY(y);
         robot_->setAngle(theta);
         robot_->setvx(vx);
-        // robot_->setvy(vy);
+        robot_->setvy(vy);
         robot_->setomega(omega);
 
-        // Update pose
-        last_robot_pose_.getOrigin().setX(x);
-        last_robot_pose_.getOrigin().setY(y);
-        last_robot_pose_.setRotation(tf::createQuaternionFromRPY(0, 0, theta));
-
-        // Broadcast transform
-        transform_broadcaster_->sendTransform(tf::StampedTransform(
-            last_robot_pose_, ros::Time::now(), "odom", "base_footprint"));
     }
 }
 
@@ -581,11 +588,12 @@ void Simulator::publishRobotPosition()
 
     // Robot height
     double robot_height = 1.0;
+    double last_theta = tf::getYaw(last_robot_pose_.getRotation());
 
     nav_msgs::Odometry robot_location;
     robot_location.header.stamp = sim_time_;
     robot_location.header.frame_id = "odom";
-    robot_location.child_frame_id = "odom";
+    robot_location.child_frame_id = "base_footprint";
 
     robot_location.pose.pose.position.x = robot_->getx();
     robot_location.pose.pose.position.y = robot_->gety();
@@ -600,10 +608,62 @@ void Simulator::publishRobotPosition()
 
     // Differential drive robot don't has Vy
     robot_location.twist.twist.linear.x = robot_->getvx();
-    // robot_location.twist.twist.linear.y = robot_->getvy();
+    robot_location.twist.twist.linear.y = robot_->getvy();
     robot_location.twist.twist.angular.z = robot_->getomega();
 
+
+    // Broadcast transform
+    // Update pose
+    last_robot_pose_.getOrigin().setX(robot_->getx());
+    last_robot_pose_.getOrigin().setY(robot_->gety());
+    last_robot_pose_.setRotation(tf::createQuaternionFromRPY(0, 0, robot_->getAngle()));
+
+    // Broadcast transform
+    transform_broadcaster_->sendTransform(tf::StampedTransform(
+        last_robot_pose_, ros::Time::now(), "odom", "base_footprint"));
+
     pub_robot_position_.publish(robot_location);
+
+    // Expert position
+    nav_msgs::Odometry expert_location;
+    expert_location.header.stamp = sim_time_;
+    expert_location.header.frame_id = "odom";
+    expert_location.child_frame_id = "expert";
+
+    expert_location.pose.pose.position.x = robot_->getExpertX();
+    expert_location.pose.pose.position.y = robot_->getExpertY();
+    expert_location.pose.pose.position.z = robot_height / 2.0;
+
+    double expert_theta = atan2(robot_->getExpertVy(), robot_->getExpertVx());
+    Eigen::Quaternionf expert_q = orientation_handler_->angle2Quaternion(expert_theta);
+    expert_location.pose.pose.orientation.x = expert_q.x();
+    expert_location.pose.pose.orientation.y = expert_q.y();
+    expert_location.pose.pose.orientation.z = expert_q.z();
+    expert_location.pose.pose.orientation.w = expert_q.w();
+
+    // Transform pedsim control to ifferential drive robot
+    // double expert_v = robot_->getExpertVx() / cos(expert_theta);
+    // double expert_omega = (expert_theta - last_theta) / CONFIG.timeStep;
+    // expert_location.twist.twist.linear.x = expert_v;
+    // expert_location.twist.twist.angular.z = expert_omega;
+    //
+    // printf("Current %f, %f %f\n", expert_theta, last_theta, expert_omega);
+
+    expert_location.twist.twist.linear.x = robot_->getExpertVx();
+    expert_location.twist.twist.linear.y = robot_->getExpertVy();
+
+    // double x_diff = robot_->getx() + cos(expert_theta) * expert_v * CONFIG.timeStep;
+    // double y_diff = robot_->gety() + sin(expert_theta) * expert_v * CONFIG.timeStep;
+    // double theta_diff = last_theta + expert_omega * CONFIG.timeStep;
+    //
+    // printf("Current %f, %f, %f, Next %f, %f, %f, NextReal %f, %f, %f, OriginExpert: %f, %f\n",
+    //   robot_->getx(), robot_->gety(), robot_->getAngle(),
+    //   robot_->getExpertX(), robot_->getExpertY(), expert_theta,
+    //   x_diff, y_diff, theta_diff,
+    //   robot_->getExpertVx(), robot_->getExpertVy()
+    // );
+
+    pub_expert_position_.publish(expert_location);
 
     // Publish robot radius
 

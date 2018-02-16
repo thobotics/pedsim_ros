@@ -175,6 +175,38 @@ void Agent::move(double h)
             // FIXME: This is a very hacky way of making the robot "move" (=update position in hash tree) without actually moving it
             double vx = getvx(), vy = getvy();
 
+            if(CONFIG.fetch_expert){
+                // Backup
+                bool teleop = getTeleop();
+                double old_px = p.x, old_py = p.y;
+                double old_vx = v.x, old_vy = v.y;
+                double old_ax = a.x, old_ay = a.y;
+
+                // Move expert
+                setTeleop(false);
+                Ped::Tagent::setForceFactorSocial(CONFIG.forceSocial * CONFIG.robot_forceSocial_weight);
+                Ped::Tagent::setForceFactorObstacle(0); // 35
+                Ped::Tagent::setForceFactorDesired(4.2);
+
+                Ped::Tagent::setVmax(CONFIG.max_robot_speed);
+                Ped::Tagent::SetRadius(CONFIG.robot_radius);
+                Ped::Tagent::move(h);
+
+                expert_p.x = getx();
+                expert_p.y = gety();
+                expert_v.x = getvx();
+                expert_v.y = getvy();
+
+                // Restore
+                setTeleop(teleop);
+                p.x = old_px;
+                p.y = old_py;
+                v.x = old_vx;
+                v.y = old_vy;
+                a.x = old_ax;
+                a.y = old_ay;
+            }
+
             setvx(0);
             setvy(0);
             Ped::Tagent::move(h);
@@ -421,6 +453,26 @@ double Agent::getAngle()
 double Agent::getomega()
 {
     return omega;
+}
+
+double Agent::getExpertX()
+{
+    return expert_p.x;
+}
+
+double Agent::getExpertY()
+{
+    return expert_p.y;
+}
+
+double Agent::getExpertVx()
+{
+    return expert_v.x;
+}
+
+double Agent::getExpertVy()
+{
+    return expert_v.y;
 }
 
 

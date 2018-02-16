@@ -125,6 +125,7 @@ public:
     double robot_radius;
     double robot_forceSocial_weight;
     bool move_cycle;
+    bool fetch_expert;
     bool paused_;
 };
 
